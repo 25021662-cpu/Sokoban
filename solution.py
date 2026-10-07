@@ -44,9 +44,9 @@ def solve(initial_state, timebound=120):
     
     # Chạy BFS của Nhi:
     # return BFS.bfs_search(initial_state, timebound)
-    
+
     # Chạy DFS của Thắng:
-    # return DFS.dfs_search(initial_state, timebound)
+    return DFS.dfs_search(initial_state, timebound)
     
     # Chạy A* của Cường:
     # return AStar.astar_search(initial_state, timebound)

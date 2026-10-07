@@ -10,31 +10,64 @@ def dfs_search(initial_state, timebound=120):
     Đầu ra: 
         - Trạng thái đích (SokobanState) nếu tìm thấy, ngược lại trả về False.
     """
+    # thời gian bắt đầu
     start_time = time.time()
-    
-    # Gợi ý: Dùng list thông thường làm Stack (ngăn xếp) cho DFS
+
+    # lập Stack chứa các trạng thái đang chờ được duyệt.
     stack = [initial_state]
-    # Gợi ý: Dùng set để lưu hashable_state của các trạng thái đã đi qua (tránh lặp)
-    explored = set([initial_state.hashable_state()])
-    
+
+    # explored lưu các trạng thái đã phát hiện.
+    # Chỉ lưu hashable_state để so sánh nhanh hơn.
+    explored = {initial_state.hashable_state()}
+
+    # =========================
+    # 2. VÒNG LẶP DFS
+    # =========================
+
     while stack:
-        # Kiểm tra quá thời gian
-        if time.time() - start_time > timebound:
+
+        # Kiểm tra giới hạn thời gian
+        if time.time() - start_time >= timebound:
             return False
-            
-        # BƯỚC 1: Lấy trạng thái hiện tại ra khỏi đỉnh stack (pop)
-        # current = stack.pop()
-        
-        # BƯỚC 2: Kiểm tra đích 
-        # if sokoban_goal_state(current): 
-        #     return current
-            
-        # BƯỚC 3: Duyệt các trạng thái con:
-        # for next_state in current.successors():
-        #     if next_state.hashable_state() not in explored:
-        #          thêm vào stack và explored...
-        
-        # BỎ DÒNG BREAK DƯỚI ĐÂY KHI BẠN BẮT ĐẦU CODE THẬT
-        break
-        
+
+        # =========================
+        # 3. LẤY STATE TRÊN ĐỈNH STACK
+        # =========================
+
+        current_state = stack.pop()
+
+        # =========================
+        # 4. KIỂM TRA GOAL
+        # =========================
+
+        if sokoban_goal_state(current_state):
+            return current_state
+
+        # =========================
+        # 5. SINH CÁC STATE CON
+        # =========================
+
+        successors = current_state.successors()
+
+        # =========================
+        # 6. ĐƯA STATE CHƯA XÉT VÀO STACK
+        # =========================
+
+        for next_state in successors:
+
+            state_key = next_state.hashable_state()
+
+            # Chỉ xét trạng thái chưa từng gặp
+            if state_key not in explored:
+                # Đánh dấu ngay khi phát hiện
+                # để tránh cùng một state bị thêm nhiều lần.
+                explored.add(state_key)
+
+                # Thêm vào cuối stack.
+                stack.append(next_state)
+
+    # =========================
+    # 7. KHÔNG TÌM THẤY LỜI GIẢI
+    # =========================
+
     return False
