@@ -43,7 +43,7 @@ def solve(initial_state, timebound=120):
     # 2. GỌI THUẬT TOÁN ĐỂ CHẠY (UNCOMMENT DÒNG TƯƠNG ỨNG ĐỂ TEST)
     
     # Chạy BFS của Nhi:
-    # return BFS.bfs_search(initial_state, timebound)
+    return BFS.bfs_search(initial_state, timebound)
 
     # Chạy DFS của Thắng:
     return DFS.dfs_search(initial_state, timebound)
