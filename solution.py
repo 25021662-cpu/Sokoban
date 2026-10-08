@@ -23,10 +23,12 @@ def check_early_stop(state):
         
     # Số lượng thùng nhiều hơn số đích -> Vô nghiệm
     if len(state.boxes) > len(state.storage):
+        print(f"⚠️ Vô nghiệm: Số lượng thùng ({len(state.boxes)}) > số lượng đích ({len(state.storage)})")
         return False
         
     # Không có robot nhưng thùng chưa vào đích -> Vô nghiệm
     if not state.robots:
+        print(f"⚠️ Vô nghiệm: Không có robot nhưng vẫn còn thùng chưa vào đích")
         return False
         
     # Trạng thái bình thường, tiếp tục
