@@ -1,0 +1,1 @@
+### Tổng kết giai đoạn 1: Đa phần testcase đều không pass, không có sự khác biệt rõ ràng giữa các search algorithm, chủ yếu bắt lỗi bằng hàm check_early_stop, ae tiếp tục triển khai heuristic, chưa dùng hàm mapper, viết các hàm heuristic theo dạng file 1 hàm để dễ triển khai.

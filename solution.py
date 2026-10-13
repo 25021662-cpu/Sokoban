@@ -1,5 +1,6 @@
 """Student entry point. See README.md for the API and scoring rules."""
 import time
+import mapper
 from sokoban import sokoban_goal_state
 
 # -- IMPORT CÁC MODULE CỦA THÀNH VIÊN TRONG QUÁ TRÌNH DEV --
@@ -23,14 +24,19 @@ def check_early_stop(state):
         
     # Số lượng thùng nhiều hơn số đích -> Vô nghiệm
     if len(state.boxes) > len(state.storage):
-        print(f"⚠️ Vô nghiệm: Số lượng thùng ({len(state.boxes)}) > số lượng đích ({len(state.storage)})")
+        print("❌", end="")
         return False
         
     # Không có robot nhưng thùng chưa vào đích -> Vô nghiệm
     if not state.robots:
-        print(f"⚠️ Vô nghiệm: Không có robot nhưng vẫn còn thùng chưa vào đích")
+        print("❌", end="")
         return False
-        
+    
+    # if mapper.is_deadlock(state, mapper.map_err(state)):
+    #     print("❌", end="")
+    #     return False
+    
+    print("✅", end="")
     # Trạng thái bình thường, tiếp tục
     return None
 
@@ -45,13 +51,13 @@ def solve(initial_state, timebound=120):
     # 2. GỌI THUẬT TOÁN ĐỂ CHẠY (UNCOMMENT DÒNG TƯƠNG ỨNG ĐỂ TEST)
     
     # Chạy BFS của Nhi:
-    return BFS.bfs_search(initial_state, timebound)
+    # return BFS.bfs_search(initial_state, timebound)
 
     # Chạy DFS của Thắng:
-    return DFS.dfs_search(initial_state, timebound)
+    # return DFS.dfs_search(initial_state, timebound)
     
     # Chạy A* của Cường:
-    # return AStar.astar_search(initial_state, timebound)
+    return AStar.astar_search(initial_state, timebound)
     
     # Tạm thời trả về False để không bị lỗi lúc chạy autograder
     return False

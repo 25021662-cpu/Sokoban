@@ -1,4 +1,3 @@
-import time
 import heapq
 from sokoban import sokoban_goal_state
 
@@ -28,7 +27,6 @@ def astar_search(initial_state, timebound=120):
     Đầu ra: 
         - Trạng thái đích (SokobanState) nếu tìm thấy, ngược lại trả về False.
     """
-    # start_time = time.time()
     
     # Hàng đợi ưu tiên (Priority Queue) của A*
     pq = []
@@ -41,9 +39,6 @@ def astar_search(initial_state, timebound=120):
     explored = {initial_state.hashable_state(): initial_state.gval}
 
     while pq:
-        # Kiểm tra quá thời gian
-        # if time.time() - start_time > timebound:
-        #     return False
             
         # BƯỚC 1: Lấy Node có f_value nhỏ nhất ra
         current_node = heapq.heappop(pq)

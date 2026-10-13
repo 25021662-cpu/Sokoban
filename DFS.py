@@ -1,4 +1,3 @@
-import time
 from sokoban import sokoban_goal_state
 
 def dfs_search(initial_state, timebound=120):
@@ -10,8 +9,6 @@ def dfs_search(initial_state, timebound=120):
     Đầu ra: 
         - Trạng thái đích (SokobanState) nếu tìm thấy, ngược lại trả về False.
     """
-    # thời gian bắt đầu
-    start_time = time.time()
 
     # lập Stack chứa các trạng thái đang chờ được duyệt.
     stack = [initial_state]
@@ -25,11 +22,6 @@ def dfs_search(initial_state, timebound=120):
     # =========================
 
     while stack:
-
-        # Kiểm tra giới hạn thời gian
-        if time.time() - start_time >= timebound:
-            return False
-
         # =========================
         # 3. LẤY STATE TRÊN ĐỈNH STACK
         # =========================
