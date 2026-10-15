@@ -11,12 +11,12 @@ class Node:
     def __lt__(self, other):
         return self.f_value < other.f_value
 
-def manhattan_heuristic(state):
-    total = 0
-    for box in state.boxes:          # tọa độ (x, y) của từng thùng
-        total += min(abs(box[0] - g[0]) + abs(box[1] - g[1])
-                     for g in state.storage)
-    return total
+def dummy_heuristic(state):
+    """
+    Tạm thời trả về 0 để A* chạy giống hệt thuật toán UCS (Uniform Cost Search)
+    Giai đoạn 2 nhóm sẽ viết logic tính toán khoảng cách Manhattan vào đây.
+    """
+    return 0
 
 def astar_search(initial_state, timebound=120):
     """
@@ -32,7 +32,7 @@ def astar_search(initial_state, timebound=120):
     pq = []
     
     # Trạng thái khởi tạo
-    f_initial = initial_state.gval + manhattan_heuristic(initial_state)
+    f_initial = initial_state.gval + dummy_heuristic(initial_state)
     heapq.heappush(pq, Node(initial_state, f_initial))
     
     # Lưu các trạng thái đã đi qua (với A* thường dùng dict để lưu kèm cost nhỏ nhất nếu muốn tối ưu thêm)
@@ -57,7 +57,7 @@ def astar_search(initial_state, timebound=120):
             new_g = next_state.gval
             if next_key not in explored or new_g < explored[next_key]:
               explored[next_key] = new_g
-              f_val = new_g + manhattan_heuristic(next_state)
+              f_val = new_g + dummy_heuristic(next_state)
               heapq.heappush(pq, Node(next_state, f_val))
 
     return False
