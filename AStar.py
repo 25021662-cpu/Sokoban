@@ -1,6 +1,6 @@
 import heapq
 from sokoban import sokoban_goal_state
-
+import BasicBoxHeuristic #nối Heuristic vô 
 # Class bọc (wrapper) để so sánh các Node trong PriorityQueue dựa vào giá trị f_value
 class Node:
     def __init__(self, state, f_value):
