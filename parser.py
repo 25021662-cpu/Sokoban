@@ -2,87 +2,51 @@ from sokoban import SokobanState
 
 def parse_level(file_path):
     """
-    Hàm đọc map từ file text và chuyển đổi thành đối tượng SokobanState.
-    Hỗ trợ cả 2 định dạng:
-    1. Định dạng của AI-Multi-Agent: tường '+', robot '0-9', thùng 'A-Z', đích 'a-z'
-    2. Định dạng Sokoban chuẩn: tường '#', robot '@', đích '.', thùng '$', 
-       thùng trên đích '*', robot trên đích '+'
+    Parse chuỗi biểu diễn Sokoban thành đối tượng SokobanState.
+    Nếu không truyền state_class, hàm trả về một dict chứa các thuộc tính.
     """
-    with open(file_path, 'r', encoding='utf-8') as f:
-        raw_lines = f.readlines()
-        
-    map_lines = []
-    for line in raw_lines:
-        clean_line = line.rstrip('\n')
-        # Bỏ qua dòng cấu hình màu của Multi-Agent
-        if not clean_line or ':' in clean_line:
-            continue
-        map_lines.append(clean_line)
-        
-    height = len(map_lines)
-    width = max(len(line) for line in map_lines) if height > 0 else 0
-    
-    robots_dict = {}
-    boxes = set()
-    storage = set()
-    obstacles = set()
-    
-    # Biến phụ để đếm số lượng robot trong trường hợp map chuẩn dùng '@'
-    robot_count = 0
-    
-    for y, line in enumerate(map_lines):
-        for x, char in enumerate(line):
-            # 1. Đọc Tường (Obstacles)
-            if char == '+' or char == '#':
-                # '+' là tường ở map Multi-Agent
-                # Nhưng lưu ý: '+' cũng là Robot trên đích ở map chuẩn Sokoban
-                # Ta phân biệt: nếu map có chữ '@' hoặc '$' thì nó là map chuẩn.
-                # Tuy nhiên để an toàn, check nếu map chuẩn thì '+' là robot+storage.
-                pass # Sẽ xử lý gộp bên dưới
-                
-            # --- XỬ LÝ MAP MULTI-AGENT CŨ ---
-            if char.isdigit():
-                robots_dict[int(char)] = (x, y)
-            elif char.isalpha() and char.isupper():
-                boxes.add((x, y))
-            elif char.isalpha() and char.islower():
-                storage.add((x, y))
-                
-            # --- XỬ LÝ MAP SOKOBAN CHUẨN (CÓ CHỒNG CHÉO KÝ HIỆU) ---
-            elif char == '#':
-                obstacles.add((x, y))
-            elif char == '$':   # Thùng
-                boxes.add((x, y))
-            elif char == '.':   # Đích
-                storage.add((x, y))
-            elif char == '*':   # Thùng đang nằm trên Đích (Đè lên nhau)
-                boxes.add((x, y))
-                storage.add((x, y))
-            elif char == '@':   # Robot
-                robots_dict[robot_count] = (x, y)
-                robot_count += 1
-            elif char == '+':   
-                # Ở map chuẩn: '+' là Robot nằm trên Đích
-                # Ở map Multi-Agent: '+' là Tường
-                # Để suy luận, ta xem map này có chứa ký tự '#' không. Nếu map không có '#' nào,
-                # khả năng cao '+' đang được dùng làm tường.
-                # Do đó, ta tạm lưu vào obstacles. Nếu là map chuẩn, người dùng nên dùng '#' làm tường.
-                obstacles.add((x, y))
+    with open(file_path, 'r') as f:
+        state_str = f.read()
 
-    # Nếu người dùng muốn ép ký hiệu '+' là Robot trên Đích (Map chuẩn),
-    # họ phải tự đảm bảo Tường được vẽ bằng ký tự '#'.
-    # Để chắc chắn, chúng ta duyệt lại:
-    is_standard_map = any('#' in line for line in map_lines)
-    if is_standard_map:
-        obstacles.clear()
-        for y, line in enumerate(map_lines):
-            for x, char in enumerate(line):
-                if char == '#':
-                    obstacles.add((x, y))
-                elif char == '+': # Robot đang đứng trên đích
-                    robots_dict[robot_count] = (x, y)
-                    robot_count += 1
-                    storage.add((x, y))
+    # Tách chuỗi thành các dòng và loại bỏ dòng trống đầu/cuối nếu có
+    lines = [line.rstrip('\r') for line in state_str.split('\n') if line]
+    
+    # Loại bỏ viền trên cùng và dưới cùng
+    inner_lines = lines[1:-1]
+    
+    height = len(inner_lines)
+    # Loại bỏ ký tự viền '#' ở đầu và cuối mỗi dòng
+    width = len(inner_lines[0]) - 2 if height > 0 else 0
+    
+    storage = []
+    obstacles = []
+    boxes = []
+    robots_dict = {}  # Lưu robot theo chỉ số để sắp xếp đúng thứ tự (a/A -> 0, b/B -> 1, ...)
+
+    for y, line in enumerate(inner_lines):
+        # Cắt bỏ '#' ở hai đầu
+        content = line[1:-1]
+        for x, char in enumerate(content):
+            pos = (x, y)
+            
+            if char == '#':
+                obstacles.append(pos)
+            elif char == '.':
+                storage.append(pos)
+            elif char == '$':
+                boxes.append(pos)
+            elif char == '*':
+                boxes.append(pos)
+                storage.append(pos)
+            elif 'a' <= char <= 'z':
+                idx = ord(char) - ord('a')
+                robots_dict[idx] = pos
+            elif 'A' <= char <= 'Z':
+                idx = ord(char) - ord('A')
+                robots_dict[idx] = pos
+                storage.append(pos)
+            elif char == ' ':
+                continue
                 
     robots = tuple(pos for idx, pos in sorted(robots_dict.items()))
     

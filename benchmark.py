@@ -10,9 +10,9 @@ def run_benchmark(level_folder, output_csv="benchmark_results.csv", timebound=12
     """
     print(f"Bắt đầu quét thư mục: {level_folder}")
     print(f"Kết quả sẽ được lưu vào file: {output_csv}")
-    print("-" * 50)
+    # print("-" * 72)
     
-    files = [f for f in os.listdir(level_folder) if f.endswith('.lvl')]
+    files = sorted([f for f in os.listdir(level_folder) if f.endswith('.lvl')])
     results = [] # List chứa các Dictionary dữ liệu
     
     for filename in files:
@@ -30,6 +30,8 @@ def run_benchmark(level_folder, output_csv="benchmark_results.csv", timebound=12
             })
             continue
         
+        print("-" * 72)
+        initial_state.print_state()
         print(f"[{filename:<30}]", end=" ", flush=True)       
         
         start_time = time.time()
@@ -65,9 +67,9 @@ def run_benchmark(level_folder, output_csv="benchmark_results.csv", timebound=12
     df = pd.DataFrame(results)
     
     # Xuất ra file CSV
-    df.to_csv(output_csv, index=False, encoding='utf-8-sig')
+    df.to_csv(output_csv, index=False, encoding='utf-8')
 
-    print("-" * 50)
+    print("-" * 72)
     print("🏆 BÁO CÁO TỔNG KẾT:")
     
     total_tests = len(df)
@@ -87,8 +89,8 @@ def run_benchmark(level_folder, output_csv="benchmark_results.csv", timebound=12
     print(f"   => Đã xuất thành công file '{output_csv}'!")
 
 if __name__ == "__main__":
-    folder_path = "levels/competition_levels17"  # Thay đổi đường dẫn tới thư mục chứa các file .lvl
-    output_file = "benchmark/benchmark_results_1.csv"
+    folder_path = "levels/competition_levels"  # Thay đổi đường dẫn tới thư mục chứa các file .lvl
+    output_file = "benchmark/benchmark_competition_2.csv"
     
     if os.path.exists(folder_path):
         run_benchmark(folder_path, output_csv=output_file)

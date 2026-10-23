@@ -1,14 +1,16 @@
 """Student entry point. See README.md for the API and scoring rules."""
 import time
+
+import AStar
+import AStarW
+import BFS
+import DFS
 import mapper
 from sokoban import sokoban_goal_state
 
 # -- IMPORT CÁC MODULE CỦA THÀNH VIÊN TRONG QUÁ TRÌNH DEV --
 # KHI NỘP BÀI: Xóa phần import này và dồn toàn bộ code của các bạn vào đây.
 
-import BFS
-import DFS
-import AStar
 
 def check_early_stop(state):
     """
@@ -32,9 +34,10 @@ def check_early_stop(state):
         print("❌", end="")
         return False
     
-    # if mapper.is_deadlock(state, mapper.map_err(state)):
-    #     print("❌", end="")
-    #     return False
+    map_info = mapper.get_map_info(state)
+    if mapper.is_deadlock(state, map_info):
+        print("❌", end="")
+        return False
     
     print("✅", end="")
     # Trạng thái bình thường, tiếp tục
@@ -42,7 +45,11 @@ def check_early_stop(state):
 
 def solve(initial_state, timebound=120):
     """Return a goal SokobanState with a valid parent chain, or False."""
-    
+
+    if timebound <= 0:
+        print("❌", end="")
+        return False
+
     # 1. KÍCH HOẠT KIỂM TRA DỪNG SỚM
     early_stop = check_early_stop(initial_state)
     if early_stop is not None:
@@ -57,7 +64,7 @@ def solve(initial_state, timebound=120):
     # return DFS.dfs_search(initial_state, timebound)
     
     # Chạy A* của Cường:
-    return AStar.astar_search(initial_state, timebound)
+    return AStarW.astar_search(initial_state, 2, timebound)
     
     # Tạm thời trả về False để không bị lỗi lúc chạy autograder
     return False
