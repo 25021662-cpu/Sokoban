@@ -90,7 +90,7 @@ def run_benchmark(level_folder, output_csv="benchmark_results.csv", timebound=12
 
 if __name__ == "__main__":
     folder_path = "levels/competition_levels"  # Thay đổi đường dẫn tới thư mục chứa các file .lvl
-    output_file = "benchmark/benchmark_competition_2.csv"
+    output_file = "benchmark/benchmark_competition1.csv"
     
     if os.path.exists(folder_path):
         run_benchmark(folder_path, output_csv=output_file)

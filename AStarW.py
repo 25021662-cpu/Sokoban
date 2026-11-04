@@ -32,14 +32,16 @@ def heuristic(state):
     """
     
     # 1. Chi phí đẩy Thùng vào Đích (Ghép 1-1 tối ưu)
-    h_box = advanced_heuristic(state)
-    if h_box == float("inf"):
-        return float("inf")
+    # h_box = advanced_heuristic(state)
+    # if h_box == float("inf"):
+    #     return float("inf")
 
-    # 2. Chi phí Robot tiếp cận Thùng gần nhất
-    h_robot = RH.robot_to_box_heuristic(state, mode="guided")
+    # # 2. Chi phí Robot tiếp cận Thùng gần nhất
+    # h_robot = RH.robot_to_box_heuristic(state, mode="guided")
 
-    return h_box + h_robot
+    # return h_box + h_robot
+    
+    return RH.combined_heuristic(state, mode="admissible")
     
 
 def astar_search(initial_state, w=1.2, timebound=120, heuristic_fn=heuristic):

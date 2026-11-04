@@ -1,8 +1,18 @@
+_hbox_cache = {}
+
 def manhattan_distance(box, goal):
     return abs(box[0] - goal[0]) + abs(box[1] - goal[1])
 
 
 def advanced_heuristic(state):
+    cache_key = (state.boxes, state.storage)
+    h_box = _hbox_cache.get(cache_key)
+    if h_box is None:
+        h_box = _compute_advanced_heuristic(state)
+        _hbox_cache[cache_key] = h_box
+    return h_box
+
+def _compute_advanced_heuristic(state):
     boxes = sorted(state.boxes)
     goals = sorted(state.storage)
 

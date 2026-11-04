@@ -1,11 +1,9 @@
 """Student entry point. See README.md for the API and scoring rules."""
 import time
 
-import AStar
 import AStarW
-import BFS
-import DFS
 import mapper
+import macro_push
 from sokoban import sokoban_goal_state
 
 # -- IMPORT CÁC MODULE CỦA THÀNH VIÊN TRONG QUÁ TRÌNH DEV --
@@ -55,16 +53,10 @@ def solve(initial_state, timebound=120):
     if early_stop is not None:
         return early_stop
         
-    # 2. GỌI THUẬT TOÁN ĐỂ CHẠY (UNCOMMENT DÒNG TƯƠNG ỨNG ĐỂ TEST)
+    # 2. MACRO PUSH + LACAM (giảm branching factor mạnh)
+    result = macro_push.macro_astar(initial_state, w=2.0, timebound=timebound)
+    if result:
+        return result
     
-    # Chạy BFS của Nhi:
-    # return BFS.bfs_search(initial_state, timebound)
-
-    # Chạy DFS của Thắng:
-    # return DFS.dfs_search(initial_state, timebound)
-    
-    # Chạy A* của Cường:
+    # 3. FALLBACK: Step-by-step A* (nếu macro push thất bại)
     return AStarW.astar_search(initial_state, 2, timebound)
-    
-    # Tạm thời trả về False để không bị lỗi lúc chạy autograder
-    return False
