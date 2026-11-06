@@ -2,9 +2,9 @@ import time
 import os
 import pandas as pd
 from parser import parse_level
-from solution import solve
+from solution_submit import solve
 
-def run_benchmark(level_folder, output_csv="benchmark_results.csv", timebound=120):
+def run_benchmark(level_folder, output_csv, w, timebound=120):
     """
     Quét qua tất cả file .lvl, chạy thuật toán và xuất CSV.
     """
@@ -30,12 +30,12 @@ def run_benchmark(level_folder, output_csv="benchmark_results.csv", timebound=12
             })
             continue
         
-        print("-" * 72)
-        initial_state.print_state()
+        # print("-" * 72)
+        # initial_state.print_state()
         print(f"[{filename:<30}]", end=" ", flush=True)       
         
         start_time = time.time()
-        result_state = solve(initial_state, timebound)
+        result_state = solve(initial_state, timebound, w)
         elapsed_time = time.time() - start_time
         
         if elapsed_time >= timebound:
@@ -89,10 +89,11 @@ def run_benchmark(level_folder, output_csv="benchmark_results.csv", timebound=12
     print(f"   => Đã xuất thành công file '{output_csv}'!")
 
 if __name__ == "__main__":
-    folder_path = "levels/competition_levels"  # Thay đổi đường dẫn tới thư mục chứa các file .lvl
-    output_file = "benchmark/benchmark_competition1.csv"
+    w = 2.3
+    folder_path = "levels/competition_levels17"  # Thay đổi đường dẫn tới thư mục chứa các file .lvl
+    output_file = f"benchmark/benchmark_competition17.1_ss_w{w}.csv"
     
     if os.path.exists(folder_path):
-        run_benchmark(folder_path, output_csv=output_file)
+        run_benchmark(folder_path, output_file, w)
     else:
         print(f"Không tìm thấy thư mục map tại: {folder_path}")

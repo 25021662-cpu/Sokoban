@@ -1,0 +1,21 @@
+Level Name,Status,Length (Steps),Time (s)
+test00.lvl,PASS,17,0.0291
+test01.lvl,PASS,4,0.0002
+test02.lvl,PASS,21,0.0074
+test03.lvl,PASS,12,0.0005
+test04.lvl,PASS,10,0.0007
+test05.lvl,PASS,30,0.0015
+test06.lvl,PASS,16,0.0007
+test07.lvl,PASS,41,0.0029
+test08.lvl,PASS,14,0.0039
+test09.lvl,PASS,30,5.6585
+test10.lvl,PASS,41,0.0111
+test11.lvl,PASS,33,0.0088
+test12.lvl,PASS,31,0.004
+test13.lvl,PASS,31,0.0061
+test14.lvl,PASS,30,0.0055
+test15.lvl,PASS,81,0.0659
+test16.lvl,PASS,59,0.025
+test17.lvl,PASS,110,0.3864
+test18.lvl,PASS,105,0.1416
+test19.lvl,PASS,86,0.0968
