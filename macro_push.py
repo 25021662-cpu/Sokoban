@@ -602,7 +602,7 @@ def macro_astar(initial_state, w=2.3, timebound=120, heuristic_fn=None, map_info
     while pq:
         step_counter += 1
         if (step_counter & 127) == 0:
-            if time.time() - start_time > timebound - 0.5:
+            if time.time() - start_time >= timebound:
                 return False
 
         node = heapq.heappop(pq)

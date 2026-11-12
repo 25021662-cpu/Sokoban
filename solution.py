@@ -26,7 +26,7 @@ Cấu trúc các thành phần chính trong file:
 import heapq
 import time
 from collections import deque
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 from sokoban import SokobanState, sokoban_goal_state
 
@@ -98,7 +98,6 @@ class MapInfo:
         self.goal_corridors = self._compute_goal_corridors()
         self.constrained_rows, self.constrained_cols = self._compute_constrained_lines()
         self.tunnel_h, self.tunnel_v = self._compute_tunnels()
-        self.corner_goals = self._compute_corner_goals()
 
     def is_walkable(self, x, y) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height and (x, y) not in self.obstacles
@@ -179,22 +178,27 @@ class MapInfo:
         return chains
 
     def is_corridor_goal_blocked(self, boxes: frozenset) -> bool:
-        """Kiểm tra có thùng nào bít lối vào ô đích sâu hơn trong hành lang cụt không.
+        """Kiểm tra có thùng nào bít lối vào ô đích sâu hơn trong hành lang cụt làm thiếu số đích không."""
+        unplaced_boxes = sum(1 for b in boxes if b not in self.storage)
+        if unplaced_boxes == 0:
+            return False
 
-        Chỉ báo deadlock khi thùng tại đích ngoài THỰC SỰ bị kẹt, tức là đích liền kề
-        sâu hơn (chain[i-1]) cũng đã có thùng. Nếu chain[i-1] còn trống, thùng tại
-        chain[i] vẫn có thể đẩy vào trong → không phải deadlock.
-        """
+        trapped_goals = set()
         for chain in self.goal_corridors:
             inner_empty = False
+            empty_in_chain = set()
             for i, goal in enumerate(chain):
                 if goal not in boxes:
                     inner_empty = True
+                    empty_in_chain.add(goal)
                 elif inner_empty:
-                    # Chỉ deadlock khi đích sâu hơn liền kề cũng có thùng
-                    # (thùng tại chain[i] thực sự không còn chỗ để đẩy sâu hơn)
                     if i > 0 and chain[i - 1] in boxes:
-                        return True
+                        trapped_goals.update(empty_in_chain)
+
+        if trapped_goals:
+            empty_goals = set(self.storage) - set(boxes)
+            if len(empty_goals - trapped_goals) < unplaced_boxes:
+                return True
         return False
 
     def _compute_constrained_lines(self) -> Tuple[Tuple[Tuple[int, int], ...], Tuple[Tuple[int, int], ...]]:
@@ -252,18 +256,6 @@ class MapInfo:
         """Kiểm tra ô pos có nằm trong hành lang 1 ô theo hướng đẩy (dx, dy) hay không."""
         return (pos in self.tunnel_h) if dy == 0 else (pos in self.tunnel_v)
 
-    def _compute_corner_goals(self) -> frozenset:
-        """Xác định các ô đích nằm trong góc (có ít nhất 2 bức tường kề nhau tạo góc vuông)."""
-        corners = set()
-        for gx, gy in self.storage:
-            top = not self.is_walkable(gx, gy - 1)
-            bot = not self.is_walkable(gx, gy + 1)
-            left = not self.is_walkable(gx - 1, gy)
-            right = not self.is_walkable(gx + 1, gy)
-            if (top and left) or (top and right) or (bot and left) or (bot and right):
-                corners.add((gx, gy))
-        return frozenset(corners)
-
 
 _MAP_INFO_CACHE: Dict[Tuple, MapInfo] = {}
 
@@ -311,7 +303,7 @@ def is_freeze_deadlock(state, map_info: Optional[MapInfo] = None) -> bool:
     - Một thùng bị khóa cả 2 trục X và Y sẽ trở thành bất động vĩnh viễn:
         + Nếu thùng này chưa nằm trên ô đích (storage) -> DEADLOCK ngay lập tức.
         + Nếu thùng này đã nằm trên ô đích -> thùng đóng băng và trở thành vật cản cứng cố định, có thể làm đóng băng dây chuyền các thùng lân cận.
-    - Phát hiện Starvation Deadlock: Nếu một ô đích góc/nhạy cảm chưa có thùng, nhưng tất cả các hướng đẩy vào ô đó đều đã bị chặn bởi tường hoặc thùng đóng băng (frozen) -> DEADLOCK ngay lập tức.
+    - Phát hiện Starvation Deadlock: Nếu các ô đích chưa có thùng bị tường hoặc thùng đóng băng (frozen) bít kín mọi hướng đẩy dẫn đến số ô đích khả thi còn lại ít hơn số thùng chưa vào đích -> DEADLOCK.
     """
     boxes = state.boxes
     storage = state.storage
@@ -339,20 +331,26 @@ def is_freeze_deadlock(state, map_info: Optional[MapInfo] = None) -> bool:
                 frozen.add(b)
                 changed = True
 
-    # Starvation Deadlock: Ô đích góc không còn bất kỳ lối vào nào do tường hoặc thùng đóng băng bít kín
-    if map_info and map_info.corner_goals:
-        for g in map_info.corner_goals:
-            if g not in boxes:
-                can_enter = False
-                gx, gy = g
-                for dx, dy in _DIRS:
-                    entry = (gx + dx, gy + dy)
-                    pp = (gx + 2 * dx, gy + 2 * dy)
-                    if not is_solid(entry[0], entry[1], w, h, frozen) and not is_solid(pp[0], pp[1], w, h, frozen):
-                        can_enter = True
-                        break
-                if not can_enter:
-                    return True
+    # Starvation Deadlock: Ô đích không còn bất kỳ lối vào khả thi nào do tường hoặc thùng đóng băng bít kín
+    empty_goals = set(storage) - set(boxes)
+    if empty_goals:
+        dead_goals = set()
+        for g in empty_goals:
+            can_enter = False
+            gx, gy = g
+            for dx, dy in _DIRS:
+                entry = (gx + dx, gy + dy)
+                pp = (gx + 2 * dx, gy + 2 * dy)
+                if not is_solid(entry[0], entry[1], w, h, frozen) and not is_solid(pp[0], pp[1], w, h, frozen):
+                    can_enter = True
+                    break
+            if not can_enter:
+                dead_goals.add(g)
+
+        if dead_goals:
+            unplaced_boxes = len(unplaced)
+            if len(empty_goals - dead_goals) < unplaced_boxes:
+                return True
 
     return False
 
@@ -369,7 +367,7 @@ def is_deadlock(state, map_info: MapInfo) -> bool:
         _DEADLOCK_CACHE[boxes] = True
         return True
 
-    # 2. Deadlock đóng băng lan truyền tổng quát và bỏ đói ô đích góc
+    # 2. Deadlock đóng băng lan truyền tổng quát và bỏ đói ô đích (Starvation)
     if is_freeze_deadlock(state, map_info):
         _DEADLOCK_CACHE[boxes] = True
         return True
@@ -983,7 +981,7 @@ def macro_astar(initial_state, w=2.0, timebound=120, map_info=None):
     explored = {initial_state.hashable_state(): initial_state.gval}
 
     while pq:
-        if time.time() - start_time > timebound - 1.5:
+        if time.time() - start_time >= timebound:
             return False
 
         node = heapq.heappop(pq)
@@ -1043,10 +1041,10 @@ def check_early_stop(state, map_info: MapInfo):
         return False
     return None
 
-def solve(initial_state, timebound=120, w=2.3):
+def solve(initial_state, timebound=120):
     """
     Hàm entry point chuẩn của sinh viên theo yêu cầu đề bài.
-    Đầu vào: SokobanState ban đầu, timebound tính bằng giây, hệ số w (mặc định 2.3).
+    Đầu vào: SokobanState ban đầu, timebound tính bằng giây.
     Đầu ra: SokobanState đích với chuỗi parent hợp lệ, hoặc False.
     """
     if timebound <= 0:
@@ -1061,9 +1059,27 @@ def solve(initial_state, timebound=120, w=2.3):
     if early is not None:
         return early
 
-    # Đối với các bản đồ đông robot (Multi-Agent lớn > 4 robots), tăng hệ số w lên tối thiểu 2.8
-    # để Weighted A* có định hướng tham lam sâu, tránh bùng nổ tổ hợp chiều rộng
-    effective_w = max(w, 2.8) if len(initial_state.robots) > 4 else w
+    t0 = time.time()
+    
+    # Hệ số mặc định cho Pass 1: 2.8 cho map đông robot (> 4), 2.3 cho map thông thường
+    fast_w = 2.5 if len(initial_state.robots) > 4 else 2.3
 
-    # 2. Bộ máy tìm kiếm: Macro Push Weighted A* (hưởng trọn 100% ngân sách thời gian)
-    return macro_astar(initial_state, w=effective_w, timebound=timebound, map_info=map_info)
+    # Pass 1: Tìm lời giải ban đầu nhanh chóng (Fast Pass)
+    sol = macro_astar(initial_state, w=fast_w, timebound=timebound, map_info=map_info)
+    if not sol or sol is False:
+        return False
+
+    # Pass 2: Tận dụng thời gian còn lại để tìm solution tốt hơn (Anytime Refinement)
+    # Nếu lời giải còn dài (> 35 bước) và ngân sách thời gian còn lại dồi dào,
+    # thử tìm lời giải tối ưu hơn với w thấp hơn (w = 2.1)
+    elapsed = time.time() - t0
+    remaining_time = timebound - elapsed
+    if remaining_time > 10:
+        refine_budget = min(remaining_time - 2, 20.0)
+        w = 2.1 if len(initial_state.robots) > 4 else 2.0
+        
+        better_sol = macro_astar(initial_state, w=w, timebound=refine_budget, map_info=map_info)
+        if better_sol and better_sol is not False and better_sol.gval < sol.gval:
+            return better_sol
+
+    return sol

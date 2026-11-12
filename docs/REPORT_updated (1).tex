@@ -1,0 +1,407 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{float}
+\geometry{a4paper, margin=2cm}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Mô tả thiết kế solver Sokoban},
+}
+
+\title{\textbf{MÔ TẢ THIẾT KẾ SOLVER SOKOBAN}}
+\author{Nhóm Thực Hiện}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\listoffigures
+\listoftables
+\newpage
+
+\noindent Tài liệu này giải thích bài nộp \texttt{solution.py} (Macro Push Weighted A*) và các thực nghiệm so sánh với BFS, UCS, Weighted A* trên từng bước đi. Mọi số liệu lấy từ \texttt{test.ipynb}; các hình nằm trong thư mục \texttt{figures/}.
+
+\section{Thiết kế}
+
+\subsection{Cách tiếp cận chung}
+
+Chi phí của lời giải là \textbf{tổng số bước robot} (đi bộ + đẩy thùng), nên không gian tìm kiếm ``mỗi bước một ô'' rất lớn: nhiều trạng thái chỉ khác nhau ở chỗ robot đi lòng vòng. Nhóm chia thành hai lớp:
+
+\begin{itemize}
+    \item \textbf{Lớp đối chứng (mức bước đơn):} BFS, UCS và Weighted A* chạy trực tiếp trên \texttt{state.successors()} của framework. Lớp này giúp kiểm tra chéo luật sinh trạng thái và làm mốc so sánh.
+    \item \textbf{Lớp nộp bài (mức macro-push):} Weighted A* tìm kiếm trên các \textit{hành động đẩy gộp}. Mỗi nút của đồ thị là một cấu hình thùng sau một lần đẩy, đoạn robot đi bộ tới vị trí đẩy được tính bằng BFS. Sau khi tìm xong, chuỗi macro được \textbf{dựng lại (reconstruct)} thành chuỗi bước cơ bản đúng luật để trả về qua \texttt{parent/action/gval}.
+\end{itemize}
+
+\subsection{Tổ chức chương trình}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{File} & \textbf{Vai trò} \\
+\midrule
+\texttt{solution.py} & \textbf{File nộp.} Gồm \texttt{MapInfo} (tiền xử lý), phát hiện deadlock, heuristic, \texttt{macro\_successors}, \texttt{reconstruct}, \texttt{macro\_astar}, \texttt{solve} \\
+\texttt{BFS.py}, \texttt{AStar.py}, \texttt{AStarW.py} & Bản đối chứng: BFS, A*/Weighted A* trên bước đơn \\
+\texttt{AdvancedHeuristic.py}, \texttt{RobotHeuristic.py}, \texttt{BasicBoxHeuristic.py} & Các heuristic cho bản A* bước đơn \\
+\texttt{mapper.py} & Tiền xử lý bản đồ và \texttt{is\_deadlock} dùng cho A* bước đơn \\
+\texttt{macro\_push.py} & Bản macro-push dùng trong giai đoạn thử nghiệm \\
+\texttt{benchmark.py}, \texttt{tune\_w.py}, \texttt{test.ipynb} & Chạy thực nghiệm và vẽ biểu đồ \\
+\bottomrule
+\end{tabularx}
+\caption{Tổ chức các tệp mã nguồn trong dự án}
+\end{table}
+
+\subsection{Các thành phần của solver nộp (\texttt{solution.py})}
+
+\textbf{a) Tiền xử lý bản đồ (\texttt{MapInfo}).}
+\begin{itemize}
+    \item \textit{Ô chết tĩnh (static dead squares):} chạy BFS ngược (pull search) từ các ô đích; ô nào không thể kéo ngược tới thì đặt thùng vào đó không bao giờ tới được đích.
+    \item \textit{Ma trận khoảng cách đẩy:} BFS ngược từ mỗi ô đích, cho khoảng cách đẩy thùng thực tế quanh tường (chính xác hơn Manhattan).
+    \item \textit{Hành lang đích, hàng/cột sát biên, tunnel:} dùng để kiểm tra deadlock nâng cao và để gộp các lần đẩy.
+\end{itemize}
+
+\textbf{b) Phát hiện deadlock (\texttt{is\_deadlock}, có cache theo tập thùng).}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Dạng} & \textbf{Ý nghĩa} \\
+\midrule
+Ô chết tĩnh & Thùng nằm trên ô không thể đưa tới đích \\
+Khối $2\times 2$ & Bốn ô gồm tường/thùng chưa xong tạo thành khối khóa \\
+Freeze (đóng băng) & Trạng thái bất động lan truyền theo trục X/Y từ tường sang các thùng kề nhau \\
+Bít cửa hành lang đích & Thùng ngoài chặn lối vào đích bên trong \\
+Line/wall & Số thùng trên hàng/cột sát biên vượt số ô đích trên hàng/cột đó \\
+\bottomrule
+\end{tabularx}
+\caption{Các dạng deadlock được bộ phát hiện xử lý}
+\end{table}
+
+\textbf{c) Heuristic.} $h(n) =$ chi phí ghép cặp 1--1 tối ưu giữa thùng và đích bằng thuật toán Hungarian $O(V^3)$ trên ma trận khoảng cách đẩy. Nếu một thùng không thể tới đích nào thì $h = \infty$ và nhánh bị cắt. Hỗ trợ trường hợp số đích nhiều hơn số thùng.
+
+\textbf{d) Macro push (\texttt{macro\_successors}).} Với mỗi thùng và mỗi hướng, kiểm tra ô sau thùng và ô đứng đẩy hợp lệ, rồi sinh:
+\begin{itemize}
+    \item đẩy một ô;
+    \item \textit{line push}: đẩy liên tiếp theo một hướng tới các ô đích dọc đường;
+    \item \textit{tunnel macro}: khi vào hành lang rộng 1 ô thì đẩy xuyên suốt tới điểm quyết định, trong một macro duy nhất.
+\end{itemize}
+Với nhiều robot, hàm xét robot nào tới được vị trí đẩy (flood fill có tính robot khác là vật cản) và có xử lý nhường đường.
+
+\textbf{e) Tìm kiếm (\texttt{macro\_astar}).} $f(n) = g(n) + w \cdot h(n)$, hàng đợi ưu tiên \texttt{heapq}, bảng \texttt{explored} lưu $g$ nhỏ nhất theo \texttt{hashable\_state()}. Mỗi nút sinh ra đều qua \texttt{is\_deadlock} và kiểm tra $h = \infty$ trước khi vào hàng đợi. Khi chạm trạng thái đích thì gọi \texttt{reconstruct}; nếu dựng lại thất bại thì bỏ nhánh đó và đi tiếp. Dừng và trả \texttt{False} khi còn khoảng 1,5 giây so với \texttt{timebound}.
+
+\textbf{f) Điểm vào \texttt{solve}.} Tạo \texttt{MapInfo}, dừng sớm (đã ở đích, thùng nhiều hơn đích, không có robot, thùng đang ở ô chết, deadlock ban đầu), rồi chạy \texttt{macro\_astar}. Mặc định $w = 2.3$; với bản đồ có hơn 4 robot thì dùng $w \ge 2.8$. Không sửa \texttt{initial\_state}.
+
+\subsection{Lý do lựa chọn}
+
+\begin{itemize}
+    \item A* có heuristic ghép cặp cho hướng tìm kiếm tốt hơn mù, còn $w > 1$ ưu tiên heuristic để vượt các bản đồ lớn trong giới hạn thời gian.
+    \item Gộp các bước đi và đẩy thành macro giảm mạnh số trạng thái phải mở rộng (xem Mục \ref{sec:thuc_nghiem}).
+    \item Cắt tỉa deadlock sớm tránh phí thời gian vào nhánh chắc chắn thất bại.
+    \item Giữ BFS/UCS/A* bước đơn làm đối chứng để phát hiện lỗi sinh trạng thái và đo lợi ích thực sự của macro.
+\end{itemize}
+
+\section{Chất lượng lời giải}
+
+\textbf{Phương pháp tìm và cải thiện lời giải.}
+\begin{itemize}
+    \item Đoạn đi bộ trong mỗi macro được dựng bằng BFS nên là đường ngắn nhất cho riêng đoạn đó.
+    \item Tham số $w$ điều khiển đánh đổi giữa tốc độ và độ dài lời giải; nhóm khảo sát $w \in \{1, 2, 3, 4\}$ (Mục \ref{sec:khao_sat_w}).
+    \item Solver \textbf{không} có bước hậu xử lý rút ngắn đường đi sau khi tìm xong.
+\end{itemize}
+
+\textbf{Về tính tối ưu: nhóm không tuyên bố lời giải nộp là tối ưu.}
+\begin{itemize}
+    \item BFS và UCS trên bước đơn (chi phí 1 mỗi bước) cho lời giải ngắn nhất \textit{khi chúng giải xong}; đây là mốc tối ưu để so sánh.
+    \item Weighted A* với $w > 1$ ưu tiên heuristic nên không bảo đảm tối ưu.
+    \item Với Macro A*, $g$ là chi phí các macro-transition còn $h$ chỉ ước lượng quãng đẩy thùng (không tính đoạn robot đi bộ), nên không có cận chất lượng chặt chẽ.
+\end{itemize}
+
+\textbf{Bằng chứng thực nghiệm.} Trên các map mà BFS giải được, lời giải Macro A* ($w = 3$) bằng hoặc dài hơn một chút, ví dụ:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Map} & \textbf{BFS/UCS (tối ưu)} & \textbf{A* ($w=3$)} & \textbf{Macro A* ($w=3$)} \\
+\midrule
+test00 & 16 bước & 18 & 18 \\
+test01 & 4 & 5 & 4 \\
+test02 & 21 & 21 & 21 \\
+test03 & 10 & 10 & 12 \\
+\bottomrule
+\end{tabular}
+\caption{So sánh độ dài lời giải trên một số bản đồ mẫu}
+\end{table}
+
+Trên cùng tập map giải được ở mọi $w$ (9 map cho A*, 12 map cho Macro A*), trung vị số bước tăng khi $w$ tăng: A* từ 16 lên 18, Macro A* từ 18,5 lên 22,5 (Hình \ref{fig:w_so_buoc}). Đây là cái giá của tốc độ.
+
+\section{Thực nghiệm}
+\label{sec:thuc_nghiem}
+
+\subsection{Thiết lập}
+
+\begin{itemize}
+    \item \textbf{Bộ test:} đúng 20 map \texttt{levels/problems/test00.lvl} $\rightarrow$ \texttt{test19.lvl}.
+    \item \textbf{Bốn thuật toán:} BFS, UCS, Weighted A* (bước đơn, heuristic Hungarian + robot, cắt deadlock của \texttt{mapper}), Macro A* (\texttt{solution.py}). Hai thuật toán A* dùng $w = 3$.
+    \item \textbf{Giới hạn:} \texttt{timebound = 20 s} cho mỗi (map $\times$ thuật toán), thêm giới hạn bảo vệ RAM 80.000 lần mở rộng/lượt; mỗi lượt chạy trong tiến trình riêng.
+    \item \textbf{Kiểm chứng:} \texttt{PASS} chỉ khi \texttt{validation.validate\_solution} xác nhận đường đi hợp lệ. Trường hợp không PASS \textbf{không có số bước}.
+    \item \textbf{Số bước} là tổng bước robot thực tế (không phải số macro-push).
+\end{itemize}
+
+\subsection{So sánh BFS, UCS, A*, Macro A*}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lcccXc}
+\toprule
+\textbf{Thuật toán} & \textbf{PASS / 20} & \textbf{TIMEOUT} & \textbf{Không PASS khác} & \textbf{Trung vị TG PASS (s)} & \textbf{Số bước TB} \\
+\midrule
+BFS & 7 (35\%) & 0 & 13 & 0,09 & 16,57 \\
+UCS & 7 (35\%) & 0 & 13 & 0,10 & 16,57 \\
+A* ($w=3$) & 19 (95\%) & 0 & 1 & 0,01 & 34,68 \\
+Macro A* ($w=3$) & \textbf{20 (100\%)} & 0 & 0 & 0,01 & 37,80 \\
+\bottomrule
+\end{tabularx}
+\caption{Kết quả thực nghiệm tổng hợp của 4 thuật toán}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/01_pass_status_stacked.png}
+    \caption{Cột chồng trạng thái PASS / TIMEOUT / Giới hạn mở rộng theo từng thuật toán}
+    \label{fig:trang_thai}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/02_time_boxplot.png}
+    \caption{Phân phối thời gian giải có tính phạt (20 giây cho trường hợp không PASS)}
+    \label{fig:thoi_gian_boxplot}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/03_runtime_heatmap.png}
+    \caption{Bản đồ nhiệt thời gian giải có tính phạt theo từng bản đồ (\texttt{test00}--\texttt{test19})}
+    \label{fig:heatmap_thoi_gian}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/04_solution_steps_grouped.png}
+    \caption{So sánh độ dài lời giải (tổng số bước robot) trên từng bản đồ PASS}
+    \label{fig:so_buoc}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/05_expanded_nodes_log.png}
+    \caption{Quy mô không gian tìm kiếm: số trạng thái mở rộng theo thang log}
+    \label{fig:so_nut_mo_rong}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/06_macro_speedup.png}
+    \caption{Gia tốc thời gian theo từng bản đồ: Macro A* so với A* bước đơn trên các map cùng PASS}
+    \label{fig:macro_tang_toc}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/07_time_vs_steps_bubble.png}
+    \caption{Tương quan giữa thời gian giải và số bước đi (kích thước điểm tỷ lệ với số thùng)}
+    \label{fig:time_vs_steps_bubble}
+\end{figure}
+
+\textbf{Nhận xét.}
+\begin{itemize}
+    \item \textbf{BFS và UCS cho kết quả y hệt nhau} (cùng 7/20, cùng số nút mở rộng, ví dụ test00 cùng mở rộng 51.917 trạng thái), vì mọi bước có chi phí 1 nên UCS suy biến thành BFS; UCS chỉ chậm hơn chút do dùng hàng đợi ưu tiên. Cả hai không có heuristic và không cắt deadlock nên bùng nổ trạng thái; 13 map không PASS.
+    \item \textbf{A* bước đơn} giải 19/20 nhờ heuristic và cắt deadlock, thường mở rộng ít nút hơn BFS hàng trăm lần (test00: 122 so với 51.917).
+    \item \textbf{Macro A*} giải đủ 20/20, mở rộng ít nút nhất (test00: 16 nút) và nhanh hơn A* trên \textbf{18/19} map mà cả hai cùng giải được (Hình \ref{fig:macro_tang_toc}).
+    \item \textbf{Về số bước và tương quan thời gian--độ dài:} số bước trung bình của A*/Macro cao hơn BFS/UCS không có nghĩa là chúng kém hơn trên cùng bài; BFS/UCS chỉ giải được các map nhỏ, còn hai thuật toán kia giải thêm nhiều map lớn (Hình \ref{fig:time_vs_steps_bubble}). So sánh công bằng nằm ở bảng ví dụ ở Mục 2: trên map chung, Macro A* và A* bằng hoặc dài hơn BFS 0--2 bước.
+    \item Tổng hợp: BFS/UCS đúng nhưng không mở rộng được; A* tốt nhưng phải đi từng bước; Macro A* cho tỉ lệ giải và tốc độ tốt nhất, đổi lại độ dài lời giải không tối ưu.
+\end{itemize}
+
+\subsection{Khảo sát hệ số $w$ cho hai thuật toán A*}
+\label{sec:khao_sat_w}
+
+$f(n) = g(n) + w \cdot h(n)$, $w \in \{1, 2, 3, 4\}$, \texttt{timebound = 20 s}, 20 map.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Thuật toán} & \textbf{$w$} & \textbf{PASS / 20} & \textbf{Trung vị TG (s, không PASS tính 20)} & \textbf{Số bước TB trên map PASS} \\
+\midrule
+A* & 1 & 9 & 20,000 & 17,78 \\
+A* & 2 & 15 & 0,029 & 22,93 \\
+A* & 3 & 19 & 0,015 & 34,68 \\
+A* & 4 & 20 & 0,012 & 39,60 \\
+Macro A* & 1 & 12 & 6,309 & 19,75 \\
+Macro A* & 2 & 20 & 0,014 & 35,25 \\
+Macro A* & 3 & 20 & 0,005 & 37,80 \\
+Macro A* & 4 & 20 & 0,005 & 38,40 \\
+\bottomrule
+\end{tabular}
+\caption{Kết quả khảo sát tham số $w$ cho A* và Macro A*}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/08_w_pass_rate.png}
+    \caption{Khả năng giải đúng (PASS rate) khi tăng trọng số heuristic $w$}
+    \label{fig:w_pass_rate}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/09_w_penalty_time.png}
+    \caption{Phân tích độ nhạy $w$: trung vị thời gian phạt theo hệ số $w$}
+    \label{fig:w_thoi_gian}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/10_w_steps_matched_maps.png}
+    \caption{Đánh đổi chất lượng lời giải (số bước) theo $w$ trên cùng tập map PASS}
+    \label{fig:w_so_buoc}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/11_12_weight_heatmap_Astar_and_macro.png}
+    \caption{Bản đồ nhiệt độ nhạy $w \times \text{map}$ cho A* bước đơn và Macro A*}
+    \label{fig:w_heatmap}
+\end{figure}
+
+\textbf{Nhận xét.}
+\begin{itemize}
+    \item $w$ tăng thì tỉ lệ giải tăng và thời gian giảm: A* cần $w = 4$ mới đủ 20/20, còn Macro A* đạt 20/20 từ $w = 2$. Macro A* ít nhạy với $w$ hơn nhờ không gian tìm kiếm nhỏ hơn.
+    \item Đổi lại, lời giải dài ra (Hình \ref{fig:w_so_buoc}). Số bước TB trên map PASS ở bảng tăng nhanh một phần vì $w$ lớn giải thêm được các map khó, nên Hình \ref{fig:w_so_buoc} (cùng tập map) mới là chỉ báo đúng cho chất lượng.
+    \item Với $w = 1$ (A* chuẩn), A* chỉ giải 9/20 và Macro A* 12/20 trong 20 s.
+    \item Giá trị mặc định $w = 2.3$ trong \texttt{solution.py} là điểm cân bằng giữa tỉ lệ giải và độ dài đường đi; bảng thực nghiệm dùng $w = 3$ cho dễ so sánh giữa hai thuật toán.
+\end{itemize}
+
+\subsection{Tập trung vào Macro A*: các map khó}
+
+Độ khó được xếp theo số thuật toán (trong 4) không PASS và thời gian phạt (20 s nếu không PASS).
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Map} & \textbf{Số thuật toán không PASS} & \textbf{Số thuật toán PASS} & \textbf{Thời gian phạt TB (s)} \\
+\midrule
+test18 & 3 & 1 & 15,01 \\
+test09 & 2 & 2 & 11,64 \\
+test17 & 2 & 2 & 11,04 \\
+test19 & 2 & 2 & 10,48 \\
+test15 & 2 & 2 & 10,37 \\
+test16 & 2 & 2 & 10,17 \\
+\bottomrule
+\end{tabular}
+\caption{Danh sách các bản đồ khó nhất trong bộ kiểm thử}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/13_difficulty_failure_count.png}
+    \caption{Xếp hạng bản đồ khó dựa trên số thuật toán không PASS dưới ngưỡng 20 giây}
+    \label{fig:map_kho}
+\end{figure}
+
+\texttt{test18} là map khó nhất: chỉ một trong bốn thuật toán giải được, và đó là Macro A*. Các map khó đều nhiều robot và nhiều thùng.
+
+\textbf{Đường giải Macro A* (bốn mốc: đầu, 1/3, 2/3, cuối)} trên test18 (101 bước), test09 (24 bước), test17 (103 bước). Ô vàng là đích, \texttt{B} là thùng (xanh lá khi đã ở đích), chữ cái là robot.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/14_macro_path_snapshots.png}
+    \caption{Đường giải Macro A* qua 4 mốc (đầu, $1/3$, $2/3$, kết thúc) trên \texttt{test18}, \texttt{test09}, \texttt{test17}}
+    \label{fig:macro_duong_giai}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/15_macro_goals_progress.png}
+    \caption{Tiến trình số thùng nằm đúng ô đích theo từng bước di chuyển của robot}
+    \label{fig:macro_tien_trinh_dich}
+\end{figure}
+
+\subsection{Các deadlock mà bộ phát hiện bắt được}
+
+Để minh họa, nhóm lấy các trạng thái đạt tới được từ bản đồ ban đầu (tối đa 1.500 trạng thái/map, chỉ xét trạng thái vừa có phép đẩy thùng) rồi gọi đúng \texttt{is\_deadlock}. Kết quả: \textbf{40 ví dụ} deadlock trên 20 map. Ví dụ ở các map khó:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lclX}
+\toprule
+\textbf{Map} & \textbf{Bước} & \textbf{Dạng deadlock phát hiện} & \textbf{Phép đẩy gây ra} \\
+\midrule
+test18 & 5 & Ô chết tĩnh + Line/wall & robot 2 đẩy phải, thùng tới (7,6) \\
+test09 & 3 & Line/wall & robot 1 đẩy xuống, thùng tới (1,5) \\
+test17 & 6 & Khối $2\times 2$ bị khóa & robot 1 đẩy lên, thùng tới (6,4) \\
+test19 & 5 & Ô chết tĩnh + Line/wall & robot 1 đẩy phải, thùng tới (7,6) \\
+\bottomrule
+\end{tabularx}
+\caption{Một số ví dụ deadlock được phát hiện trên các bản đồ khó}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/16_detected_deadlock_examples.png}
+    \caption{Trước và sau một phép đẩy gây deadlock (viền đỏ là thùng vừa bị đẩy, $\times$ là ô chết tĩnh)}
+    \label{fig:deadlock_vi_du}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/17_static_dead_squares_hard_maps.png}
+    \caption{Phân bố các ô chết tĩnh trên 6 bản đồ khó nhất}
+    \label{fig:o_chet_tinh}
+\end{figure}
+
+Trong các ví dụ này, cột ngoài cùng và hàng dưới cùng của test18/17/19 là ô chết tĩnh: đẩy thùng vào đó là mất thùng. Trong lúc tìm kiếm thật, số nhánh bị cắt (\texttt{deadlock\_pruned}) cũng đáng kể, ví dụ test00 (Macro A*) cắt 12 nhánh, test02 cắt 10, còn A* bước đơn trên test03 cắt 120.
+
+\section{Hạn chế và nguồn tham khảo}
+
+\textbf{Hạn chế.}
+\begin{itemize}
+    \item Mỗi (map, cấu hình) chỉ đo \textbf{một lượt}; thời gian phụ thuộc CPU và môi trường chạy.
+    \item Thực nghiệm dùng \texttt{timebound = 20 s} và $w = 3$ trên 20 map thực hành; bộ chấm ẩn có thể có map lớn hơn và \texttt{timebound} mặc định 120 s, nên kết quả không đại diện hoàn toàn.
+    \item BFS/UCS không cắt deadlock nên so sánh với A*/Macro là so sánh \textbf{cả thiết kế solver} (heuristic + deadlock + macro), không chỉ riêng hàng đợi.
+    \item BFS/UCS có thể dừng vì chạm giới hạn 80.000 lần mở rộng (bảo vệ RAM), nên ``không PASS'' ở đây không có nghĩa là map vô nghiệm.
+    \item \texttt{nodes\_expanded} của bước đơn và của macro là hai loại trạng thái khác nhau, chỉ dùng để so mức giảm khối lượng tìm kiếm.
+    \item Danh sách deadlock ở Mục 3.5 là mẫu minh họa trên 1.500 trạng thái đầu của mỗi map, không phải thống kê toàn bộ không gian tìm kiếm.
+    \item Lời giải không tối ưu về số bước (Mục 2); chưa có bước hậu xử lý để rút ngắn đường đi, và chưa có cơ chế phối hợp robot tối ưu cho map nhiều robot.
+    \item \texttt{reconstruct} có thể thất bại ở một số nhánh macro; khi đó solver bỏ nhánh và tìm tiếp, làm tốn thời gian.
+\end{itemize}
+
+\textbf{Tài liệu và mã nguồn tham khảo.}
+\begin{itemize}
+    \item Framework của môn học: \texttt{sokoban.py}, \texttt{state.py}, \texttt{validation.py} và 20 map trong \texttt{levels/problems}.
+    \item Kỹ thuật chuẩn: BFS/UCS/A*/Weighted A*; thuật toán Hungarian (Kuhn--Munkres) cho ghép cặp thùng--đích; kỹ thuật deadlock (ô chết, $2\times 2$, freeze) và macro-push trong các solver Sokoban.
+    \item Mã nguồn do nhóm viết, lưu lịch sử trong Git.
+\end{itemize}
+
+\textbf{Công cụ AI đã sử dụng.}
+\begin{itemize}
+   \item Nhóm đã sử dụng các công cụ AI (Claude, ChatGPT) để phục vụ quá trình lên ý tưởng và kiểm thử (test) độ hiệu quả của code; toàn bộ mã nguồn và kết quả thực nghiệm đều được nhóm tự rà soát, kiểm chứng.
+\end{itemize}
+
+\end{document}

@@ -277,26 +277,6 @@ def compute_tunnels(state) -> Tuple[frozenset, frozenset]:
     return frozenset(th), frozenset(tv)
 
 
-def compute_corner_goals(state) -> frozenset:
-    """Xác định các ô đích nằm ở góc (2 hướng vuông góc là tường) cần giám sát đặc biệt."""
-    width, height = state.width, state.height
-    obstacles = state.obstacles
-
-    def is_walkable(x, y):
-        return 0 <= x < width and 0 <= y < height and (x, y) not in obstacles
-
-    corner_goals = set()
-    for gx, gy in state.storage:
-        up_wall = not is_walkable(gx, gy - 1)
-        down_wall = not is_walkable(gx, gy + 1)
-        left_wall = not is_walkable(gx - 1, gy)
-        right_wall = not is_walkable(gx + 1, gy)
-        if (up_wall and left_wall) or (up_wall and right_wall) or \
-           (down_wall and left_wall) or (down_wall and right_wall):
-            corner_goals.add((gx, gy))
-    return frozenset(corner_goals)
-
-
 class MapInfo:
     """Container lưu trữ toàn bộ dữ liệu tiền xử lý địa hình bản đồ."""
     def __init__(self, state):
@@ -311,7 +291,6 @@ class MapInfo:
         self.dist_matrix = self.distance_matrix
         self.constrained_rows, self.constrained_cols = compute_constrained_lines(state)
         self.tunnel_h, self.tunnel_v = compute_tunnels(state)
-        self.corner_goals: frozenset = compute_corner_goals(state)
 
     def is_walkable(self, x: int, y: int) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height and (x, y) not in self.obstacles
@@ -326,14 +305,27 @@ class MapInfo:
             return pos in self.tunnel_v
 
     def is_corridor_goal_blocked(self, boxes: frozenset) -> bool:
-        """Kiểm tra có thùng nào ở cửa hành lang bít lối vào ô đích sâu hơn còn trống không."""
+        """Kiểm tra có thùng nào bít lối vào ô đích sâu hơn trong hành lang cụt làm thiếu số đích không."""
+        unplaced_boxes = sum(1 for b in boxes if b not in self.storage)
+        if unplaced_boxes == 0:
+            return False
+
+        trapped_goals = set()
         for chain in self.goal_corridors:
             inner_empty = False
-            for goal in chain:
+            empty_in_chain = set()
+            for i, goal in enumerate(chain):
                 if goal not in boxes:
                     inner_empty = True
+                    empty_in_chain.add(goal)
                 elif inner_empty:
-                    return True
+                    if i > 0 and chain[i - 1] in boxes:
+                        trapped_goals.update(empty_in_chain)
+
+        if trapped_goals:
+            empty_goals = set(self.storage) - set(boxes)
+            if len(empty_goals - trapped_goals) < unplaced_boxes:
+                return True
         return False
 
     def is_line_deadlock(self, boxes: frozenset) -> bool:
@@ -429,19 +421,26 @@ def is_freeze_deadlock(state, map_info: Optional[MapInfo] = None) -> bool:
                 frozen.add(b)
                 changed = True
 
-    if map_info and getattr(map_info, 'corner_goals', None):
-        for g in map_info.corner_goals:
-            if g not in boxes:
-                can_enter = False
-                gx, gy = g
-                for dx, dy in _DIRECTIONS:
-                    entry = (gx + dx, gy + dy)
-                    pp = (gx + 2 * dx, gy + 2 * dy)
-                    if not is_solid(entry[0], entry[1], w, h, frozen) and not is_solid(pp[0], pp[1], w, h, frozen):
-                        can_enter = True
-                        break
-                if not can_enter:
-                    return True
+    # Starvation Deadlock: Ô đích không còn bất kỳ lối vào khả thi nào do tường hoặc thùng đóng băng bít kín
+    empty_goals = set(storage) - set(boxes)
+    if empty_goals:
+        dead_goals = set()
+        for g in empty_goals:
+            can_enter = False
+            gx, gy = g
+            for dx, dy in _DIRECTIONS:
+                entry = (gx + dx, gy + dy)
+                pp = (gx + 2 * dx, gy + 2 * dy)
+                if not is_solid(entry[0], entry[1], w, h, frozen) and not is_solid(pp[0], pp[1], w, h, frozen):
+                    can_enter = True
+                    break
+            if not can_enter:
+                dead_goals.add(g)
+
+        if dead_goals:
+            unplaced_boxes = len(unplaced)
+            if len(empty_goals - dead_goals) < unplaced_boxes:
+                return True
 
     return False
 

@@ -1,16 +1,19 @@
-import time
 import os
-import pandas as pd
+import time
 from parser import parse_level
-from solution_submit import solve
+
+import pandas as pd
+from solution import solve
+
 from validation import validate_solution
 
-def run_benchmark(level_folder, output_csv, w, show_map=False, timebound=5, validate=True):
+
+def run_benchmark(level_folder, output_csv, timebound=30, validate=True):
     """
     Quét qua tất cả file .lvl, chạy thuật toán và xuất CSV.
     """
     print(f"Bắt đầu quét thư mục: {level_folder}")
-    print(w, timebound)
+    print(timebound)
     if output_csv:
         print(f"Kết quả sẽ được lưu vào file: {output_csv}")
     # print("-" * 72)
@@ -34,12 +37,11 @@ def run_benchmark(level_folder, output_csv, w, show_map=False, timebound=5, vali
             continue
         
         # print("-" * 72)
-        if show_map:
-            initial_state.print_state()
+
         print(f"[{filename:<30}]", end=" ", flush=True)       
         
         start_time = time.time()
-        result_state = solve(initial_state, timebound, w)
+        result_state = solve(initial_state, timebound)
         elapsed_time = time.time() - start_time
         
         if elapsed_time >= timebound:
@@ -123,12 +125,10 @@ def run_benchmark(level_folder, output_csv, w, show_map=False, timebound=5, vali
         print(f"   - Trung bình thời gian / test: {avg_time:.4f} giây")
 
 if __name__ == "__main__":
-    w = 5
-    folder_path = "levels/XSokoban"  # Thay đổi đường dẫn tới thư mục chứa các file .lvl
+    folder_path = "levels/problems"  # Thay đổi đường dẫn tới thư mục chứa các file .lvl
     output_file = None
-    show_map = False
 
     if os.path.exists(folder_path):
-        run_benchmark(folder_path, output_file, w, show_map)
+        run_benchmark(folder_path, output_file)
     else:
         print(f"Không tìm thấy thư mục map tại: {folder_path}")
