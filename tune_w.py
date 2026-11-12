@@ -14,7 +14,7 @@ from sokoban import PROBLEMS
 from validation import validate_solution
 import solution_submit
 
-w_candidates = [2.0, 2.1, 2.2, 2.3, 2.4, 2.5]
+w_candidates = [2.1, 2.2, 2.3, 2.4, 2.5]
 results = []
 
 print("=" * 86)

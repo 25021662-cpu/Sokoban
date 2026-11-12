@@ -225,6 +225,78 @@ def get_true_distance(p1: Tuple[int, int], p2: Tuple[int, int], state, dist_matr
     return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
 
+def compute_constrained_lines(state) -> Tuple[Dict[int, int], Dict[int, int]]:
+    """Phát hiện các hàng/cột sát biên bị giới hạn khả năng đẩy ra ngoài để kiểm tra sức chứa."""
+    width, height = state.width, state.height
+    obstacles = state.obstacles
+    storage = state.storage
+
+    def is_walkable(x, y):
+        return 0 <= x < width and 0 <= y < height and (x, y) not in obstacles
+
+    rows = {}
+    for y in range(height):
+        floor_xs = [x for x in range(width) if is_walkable(x, y)]
+        if not floor_xs:
+            continue
+        all_up_blocked = all(not is_walkable(x, y - 1) for x in floor_xs)
+        all_down_blocked = all(not is_walkable(x, y + 1) for x in floor_xs)
+        if all_up_blocked or all_down_blocked:
+            rows[y] = sum(1 for (gx, gy) in storage if gy == y)
+
+    cols = {}
+    for x in range(width):
+        floor_ys = [y for y in range(height) if is_walkable(x, y)]
+        if not floor_ys:
+            continue
+        all_left_blocked = all(not is_walkable(x - 1, y) for y in floor_ys)
+        all_right_blocked = all(not is_walkable(x + 1, y) for y in floor_ys)
+        if all_left_blocked or all_right_blocked:
+            cols[x] = sum(1 for (gx, gy) in storage if gx == x)
+
+    return rows, cols
+
+
+def compute_tunnels(state) -> Tuple[frozenset, frozenset]:
+    """Xác định các ô thuộc hành lang 1 ô (tunnel) theo trục ngang và trục dọc."""
+    width, height = state.width, state.height
+    obstacles = state.obstacles
+
+    def is_walkable(x, y):
+        return 0 <= x < width and 0 <= y < height and (x, y) not in obstacles
+
+    th, tv = set(), set()
+    for x in range(width):
+        for y in range(height):
+            if not is_walkable(x, y):
+                continue
+            if not is_walkable(x, y - 1) and not is_walkable(x, y + 1):
+                th.add((x, y))
+            if not is_walkable(x - 1, y) and not is_walkable(x + 1, y):
+                tv.add((x, y))
+    return frozenset(th), frozenset(tv)
+
+
+def compute_corner_goals(state) -> frozenset:
+    """Xác định các ô đích nằm ở góc (2 hướng vuông góc là tường) cần giám sát đặc biệt."""
+    width, height = state.width, state.height
+    obstacles = state.obstacles
+
+    def is_walkable(x, y):
+        return 0 <= x < width and 0 <= y < height and (x, y) not in obstacles
+
+    corner_goals = set()
+    for gx, gy in state.storage:
+        up_wall = not is_walkable(gx, gy - 1)
+        down_wall = not is_walkable(gx, gy + 1)
+        left_wall = not is_walkable(gx - 1, gy)
+        right_wall = not is_walkable(gx + 1, gy)
+        if (up_wall and left_wall) or (up_wall and right_wall) or \
+           (down_wall and left_wall) or (down_wall and right_wall):
+            corner_goals.add((gx, gy))
+    return frozenset(corner_goals)
+
+
 class MapInfo:
     """Container lưu trữ toàn bộ dữ liệu tiền xử lý địa hình bản đồ."""
     def __init__(self, state):
@@ -236,6 +308,22 @@ class MapInfo:
         self.topology: Dict[Tuple[int, int], str] = analyze_topology(state)
         self.goal_corridors: List[Tuple[Tuple[int, int], ...]] = compute_goal_corridors(state)
         self.distance_matrix: Dict[Tuple[int, int], Dict[Tuple[int, int], int]] = compute_distance_matrix(state)
+        self.dist_matrix = self.distance_matrix
+        self.constrained_rows, self.constrained_cols = compute_constrained_lines(state)
+        self.tunnel_h, self.tunnel_v = compute_tunnels(state)
+        self.corner_goals: frozenset = compute_corner_goals(state)
+
+    def is_walkable(self, x: int, y: int) -> bool:
+        return 0 <= x < self.width and 0 <= y < self.height and (x, y) not in self.obstacles
+
+    def is_tunnel(self, pos: Tuple[int, int], dx, dy=None) -> bool:
+        """Kiểm tra ô pos có phải là tunnel theo phương di chuyển hay không."""
+        if dy is None:
+            dx, dy = dx
+        if dy == 0:
+            return pos in self.tunnel_h
+        else:
+            return pos in self.tunnel_v
 
     def is_corridor_goal_blocked(self, boxes: frozenset) -> bool:
         """Kiểm tra có thùng nào ở cửa hành lang bít lối vào ô đích sâu hơn còn trống không."""
@@ -245,6 +333,26 @@ class MapInfo:
                 if goal not in boxes:
                     inner_empty = True
                 elif inner_empty:
+                    return True
+        return False
+
+    def is_line_deadlock(self, boxes: frozenset) -> bool:
+        """Kiểm tra số thùng vượt quá số đích trên các hàng/cột sát biên."""
+        if self.constrained_rows:
+            row_counts = {}
+            for bx, by in boxes:
+                if by in self.constrained_rows:
+                    row_counts[by] = row_counts.get(by, 0) + 1
+            for y, count in row_counts.items():
+                if count > self.constrained_rows[y]:
+                    return True
+        if self.constrained_cols:
+            col_counts = {}
+            for bx, by in boxes:
+                if bx in self.constrained_cols:
+                    col_counts[bx] = col_counts.get(bx, 0) + 1
+            for x, count in col_counts.items():
+                if count > self.constrained_cols[x]:
                     return True
         return False
 
@@ -261,6 +369,11 @@ def get_map_info(state) -> MapInfo:
 # PHẦN 2: PHÁT HIỆN BẾ TẮC (DEADLOCK PRUNING)
 # ==============================================================================
 
+_DEADLOCK_CACHE: Dict[frozenset, bool] = {}
+
+def is_solid(x: int, y: int, w: int, h: int, solid: set) -> bool:
+    return x < 0 or x >= w or y < 0 or y >= h or (x, y) in solid
+
 def is_2x2_deadlock(state) -> bool:
     """
     Phát hiện các khối 2x2 bị đóng băng (Freeze Deadlock).
@@ -269,34 +382,66 @@ def is_2x2_deadlock(state) -> bool:
     Nếu có ít nhất 1 thùng trong khối đó không nằm trên đích -> Deadlock vĩnh viễn.
     """
     boxes = state.boxes
-    obstacles = state.obstacles
     storage = state.storage
-    width = state.width
-    height = state.height
+    obstacles = state.obstacles
+    w, h = state.width, state.height
 
-    unplaced_boxes = [b for b in boxes if b not in storage]
-    if not unplaced_boxes:
+    unplaced = [b for b in boxes if b not in storage]
+    if not unplaced:
         return False
 
-    def is_solid(x, y):
-        if x < 0 or x >= width or y < 0 or y >= height:
-            return True
-        return (x, y) in obstacles or (x, y) in boxes
-
-    def check_2x2(x, y):
-        if not (is_solid(x, y) and is_solid(x + 1, y) and is_solid(x, y + 1) and is_solid(x + 1, y + 1)):
-            return False
-        for cx, cy in ((x, y), (x + 1, y), (x, y + 1), (x + 1, y + 1)):
-            if (cx, cy) in boxes and (cx, cy) not in storage:
+    solid = set(obstacles) | set(boxes)
+    for bx, by in unplaced:
+        for x, y in ((bx - 1, by - 1), (bx, by - 1), (bx - 1, by), (bx, by)):
+            if (is_solid(x, y, w, h, solid) and
+                is_solid(x + 1, y, w, h, solid) and
+                is_solid(x, y + 1, w, h, solid) and
+                is_solid(x + 1, y + 1, w, h, solid)):
                 return True
+    return False
+
+
+def is_freeze_deadlock(state, map_info: Optional[MapInfo] = None) -> bool:
+    """Phát hiện bế tắc đóng băng tổng quát (General Axis-Freeze Deadlock) & Bỏ đói ô đích (Starvation)."""
+    boxes = state.boxes
+    storage = state.storage
+    obstacles = state.obstacles
+    w, h = state.width, state.height
+
+    unplaced = [b for b in boxes if b not in storage]
+    if not unplaced:
         return False
 
-    for bx, by in unplaced_boxes:
-        if (check_2x2(bx, by) or
-            check_2x2(bx - 1, by) or
-            check_2x2(bx, by - 1) or
-            check_2x2(bx - 1, by - 1)):
-            return True
+    frozen = set(obstacles)
+    changed = True
+    while changed:
+        changed = False
+        for b in boxes:
+            if b in frozen:
+                continue
+            x, y = b
+            x_blocked = is_solid(x - 1, y, w, h, frozen) or is_solid(x + 1, y, w, h, frozen)
+            y_blocked = is_solid(x, y - 1, w, h, frozen) or is_solid(x, y + 1, w, h, frozen)
+
+            if x_blocked and y_blocked:
+                if b not in storage:
+                    return True
+                frozen.add(b)
+                changed = True
+
+    if map_info and getattr(map_info, 'corner_goals', None):
+        for g in map_info.corner_goals:
+            if g not in boxes:
+                can_enter = False
+                gx, gy = g
+                for dx, dy in _DIRECTIONS:
+                    entry = (gx + dx, gy + dy)
+                    pp = (gx + 2 * dx, gy + 2 * dy)
+                    if not is_solid(entry[0], entry[1], w, h, frozen) and not is_solid(pp[0], pp[1], w, h, frozen):
+                        can_enter = True
+                        break
+                if not can_enter:
+                    return True
 
     return False
 
@@ -369,6 +514,10 @@ def is_deadlock(state, map_info_or_deadlocks=None) -> bool:
     Hàm tổng hợp duy nhất kiểm tra xem trạng thái hiện tại có bị bế tắc hay không.
     Hỗ trợ truyền vào đối tượng MapInfo (khuyến nghị) hoặc frozenset dead_squares (tương thích cũ).
     """
+    boxes = state.boxes
+    if boxes in _DEADLOCK_CACHE:
+        return _DEADLOCK_CACHE[boxes]
+
     map_info = None
     dead_squares = None
 
@@ -382,20 +531,37 @@ def is_deadlock(state, map_info_or_deadlocks=None) -> bool:
         dead_squares = map_info.dead_squares
 
     # 1. Deadlock tĩnh: Thùng bị đẩy vào ô chết tĩnh
-    for box in state.boxes:
-        if box in dead_squares:
-            return True
+    if dead_squares:
+        for box in boxes:
+            if box in dead_squares:
+                _DEADLOCK_CACHE[boxes] = True
+                return True
 
     # 2. Deadlock động: Khối kẹt 2x2 (Freeze Deadlock)
     if is_2x2_deadlock(state):
+        _DEADLOCK_CACHE[boxes] = True
         return True
 
-    # 3. Deadlock phong tỏa ô đích (Blocked Goal Deadlock)
-    if is_goal_blocked(state, dead_squares):
+    # 3. Deadlock đóng băng lan truyền tổng quát và bỏ đói ô đích góc
+    if is_freeze_deadlock(state, map_info):
+        _DEADLOCK_CACHE[boxes] = True
         return True
 
     # 4. Deadlock bít cửa hành lang/ngõ cụt (Corridor Goal Deadlock)
-    if map_info is not None and map_info.is_corridor_goal_blocked(state.boxes):
+    if map_info is not None and getattr(map_info, 'goal_corridors', None) and map_info.is_corridor_goal_blocked(boxes):
+        _DEADLOCK_CACHE[boxes] = True
         return True
 
+    # 5. Deadlock đường biên / tường
+    if map_info is not None and (getattr(map_info, 'constrained_rows', None) or getattr(map_info, 'constrained_cols', None)):
+        if map_info.is_line_deadlock(boxes):
+            _DEADLOCK_CACHE[boxes] = True
+            return True
+
+    # 6. Deadlock phong tỏa ô đích
+    if is_goal_blocked(state, dead_squares):
+        _DEADLOCK_CACHE[boxes] = True
+        return True
+
+    _DEADLOCK_CACHE[boxes] = False
     return False

@@ -3,13 +3,16 @@ import os
 import pandas as pd
 from parser import parse_level
 from solution_submit import solve
+from validation import validate_solution
 
-def run_benchmark(level_folder, output_csv, w, timebound=120):
+def run_benchmark(level_folder, output_csv, w, show_map=False, timebound=5, validate=True):
     """
     Quét qua tất cả file .lvl, chạy thuật toán và xuất CSV.
     """
     print(f"Bắt đầu quét thư mục: {level_folder}")
-    print(f"Kết quả sẽ được lưu vào file: {output_csv}")
+    print(w, timebound)
+    if output_csv:
+        print(f"Kết quả sẽ được lưu vào file: {output_csv}")
     # print("-" * 72)
     
     files = sorted([f for f in os.listdir(level_folder) if f.endswith('.lvl')])
@@ -31,7 +34,8 @@ def run_benchmark(level_folder, output_csv, w, timebound=120):
             continue
         
         # print("-" * 72)
-        # initial_state.print_state()
+        if show_map:
+            initial_state.print_state()
         print(f"[{filename:<30}]", end=" ", flush=True)       
         
         start_time = time.time()
@@ -47,14 +51,32 @@ def run_benchmark(level_folder, output_csv, w, timebound=120):
                 "Time (s)": round(elapsed_time, 4)
             })
         elif result_state:
-            steps = result_state.gval
-            print(f"✅ PASS (Steps: {steps:<4} | Time: {elapsed_time:.4f}s)")
-            results.append({
-                "Level Name": filename,
-                "Status": "PASS",
-                "Length (Steps)": steps,
-                "Time (s)": round(elapsed_time, 4)
-            })
+            is_valid = True
+            val_msg = "Valid solution"
+            if validate:
+                try:
+                    is_valid, val_msg = validate_solution(initial_state, result_state)
+                except Exception as e:
+                    is_valid, val_msg = False, f"Validation error: {e}"
+
+            if is_valid:
+                steps = result_state.gval
+                print(f"✅ PASS (Steps: {steps:<4} | Time: {elapsed_time:.4f}s)")
+                results.append({
+                    "Level Name": filename,
+                    "Status": "PASS",
+                    "Length (Steps)": steps,
+                    "Time (s)": round(elapsed_time, 4)
+                })
+            else:
+                steps = getattr(result_state, 'gval', None)
+                print(f"❌ INVALID ({val_msg} | Steps: {steps} | Time: {elapsed_time:.4f}s)")
+                results.append({
+                    "Level Name": filename,
+                    "Status": "INVALID",
+                    "Length (Steps)": None,
+                    "Time (s)": round(elapsed_time, 4)
+                })
         else:
             print(f"❌ FAIL (Elapsed Time: {elapsed_time:.4f}s)")
             results.append({
@@ -67,7 +89,12 @@ def run_benchmark(level_folder, output_csv, w, timebound=120):
     df = pd.DataFrame(results)
     
     # Xuất ra file CSV
-    df.to_csv(output_csv, index=False, encoding='utf-8')
+    if output_csv:
+        out_dir = os.path.dirname(output_csv)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        df.to_csv(output_csv, index=False, encoding='utf-8')
+        print(f"   => Đã xuất thành công file '{output_csv}'!")
 
     print("-" * 72)
     print("🏆 BÁO CÁO TỔNG KẾT:")
@@ -75,8 +102,17 @@ def run_benchmark(level_folder, output_csv, w, timebound=120):
     total_tests = len(df)
     status_counts = df['Status'].value_counts()
     passed_tests = status_counts.get('PASS', 0)
+    invalid_tests = status_counts.get('INVALID', 0)
+    failed_tests = status_counts.get('FAIL', 0)
+    timeout_tests = status_counts.get('TIMEOUT', 0)
     
     print(f"   - Số test Passed: {passed_tests}/{total_tests}")
+    if invalid_tests > 0:
+        print(f"   - Số test Invalid: {invalid_tests}/{total_tests}")
+    if failed_tests > 0:
+        print(f"   - Số test Failed: {failed_tests}/{total_tests}")
+    if timeout_tests > 0:
+        print(f"   - Số test Timeout: {timeout_tests}/{total_tests}")
     
     if passed_tests > 0:
         # Lọc ra các test Pass và tính Mean
@@ -85,15 +121,14 @@ def run_benchmark(level_folder, output_csv, w, timebound=120):
         avg_time = success_df['Time (s)'].mean()
         print(f"   - Trung bình số bước / test: {avg_steps:.2f} steps")
         print(f"   - Trung bình thời gian / test: {avg_time:.4f} giây")
-        
-    print(f"   => Đã xuất thành công file '{output_csv}'!")
 
 if __name__ == "__main__":
-    w = 2.3
-    folder_path = "levels/competition_levels17"  # Thay đổi đường dẫn tới thư mục chứa các file .lvl
-    output_file = f"benchmark/benchmark_competition17.1_ss_w{w}.csv"
-    
+    w = 5
+    folder_path = "levels/XSokoban"  # Thay đổi đường dẫn tới thư mục chứa các file .lvl
+    output_file = None
+    show_map = False
+
     if os.path.exists(folder_path):
-        run_benchmark(folder_path, output_file, w)
+        run_benchmark(folder_path, output_file, w, show_map)
     else:
         print(f"Không tìm thấy thư mục map tại: {folder_path}")
